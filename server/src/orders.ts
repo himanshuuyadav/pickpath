@@ -2,6 +2,13 @@ import { withTransaction } from './db.js';
 
 export type OrderInput = { items: { sku: string; qty: number }[]; priority?: number };
 
+export function validateOrder(input: unknown): input is OrderInput {
+  const value = input as OrderInput;
+  return Array.isArray(value?.items) && value.items.length >= 1 && value.items.length <= 10
+    && value.items.every((item) => typeof item.sku === 'string' && item.sku.length > 0 && Number.isInteger(item.qty) && item.qty >= 1 && item.qty <= 10)
+    && (value.priority === undefined || [0, 1, 2].includes(value.priority));
+}
+
 export async function reserveOrder(input: OrderInput, idempotencyKey: string) {
   const items = [...input.items.reduce((merged, item) => merged.set(item.sku, (merged.get(item.sku) ?? 0) + item.qty), new Map<string, number>())]
     .map(([sku, qty]) => ({ sku, qty })).sort((a, b) => a.sku.localeCompare(b.sku));
