@@ -1,10 +1,11 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
-import { simConfig, simMetrics, snapshot, tick, views, TICK_MS } from './sim.js';
+import { resetSim, simConfig, simMetrics, snapshot, tick, views, TICK_MS } from './sim.js';
 import { migrate } from './migrate.js';
 import { reserveOrder, validateOrder, type OrderInput } from './orders.js';
 import { recoverTasks } from './tasks.js';
+import { resetWarehouse } from './reset.js';
 
 const app = Fastify({ logger: true });
 await migrate();
@@ -29,5 +30,6 @@ app.post('/api/orders', async (request, reply) => {
   catch (error) { const cause = error as { code?: string; sku?: string }; return reply.code(409).send({ error: { code: cause.code ?? 'ORDER_FAILED', message: 'Stock could not be reserved.', sku: cause.sku } }); }
 });
 app.post('/api/sim/config', async (request) => simConfig(request.body as Partial<{ robots: number; orderRate: number; running: boolean }>));
+app.post('/api/sim/reset', async () => { await resetWarehouse(); simConfig({ running: false }); resetSim(); return snapshot(); });
 setInterval(async () => { await tick(); const data = JSON.stringify({ type: 'tick', t: Date.now(), robots: views() }); clients.forEach((client) => { if (client.readyState === 1) client.send(data); }); }, TICK_MS);
 await app.listen({ port: Number(process.env.PORT ?? 3001), host: '0.0.0.0' });
