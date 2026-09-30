@@ -1,4 +1,5 @@
 import { buildLayout, findPath, type Point, type RobotState, type RobotView, type SimConfig, type Metrics, type SimEvent } from '@warehouse/shared';
+import { TICK_MS } from './constants.js';
 
 type Robot = RobotView & { goal: Point | null; waitTicks: number };
 const layout = buildLayout();
@@ -27,3 +28,4 @@ export function tick() {
 }
 function assignWalk(robot: Robot) { robot.state = 'TO_SHELF'; robot.goal = layout.shelfAccess[(ticks + robot.id * 7) % layout.shelfAccess.length]; assignPath(robot); }
 function assignPath(robot: Robot) { robot.path = (findPath(layout, robot, robot.goal!) ?? []).map((p) => [p.x, p.y]); }
+export { TICK_MS };
