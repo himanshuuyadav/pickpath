@@ -1,9 +1,10 @@
 import { buildLayout, findPath, type Point, type RobotState, type RobotView, type SimConfig, type Metrics, type SimEvent } from '@warehouse/shared';
-import { TICK_MS } from './constants.js';
+import { DROP_TICKS, PICK_TICKS, TICK_MS } from './constants.js';
 import { schedule } from './scheduler.js';
 import { generateOrder, replenishStock } from './generator.js';
+import { completeTask } from './tasks.js';
 
-type Robot = RobotView & { goal: Point | null; waitTicks: number };
+type Robot = RobotView & { goal: Point | null; waitTicks: number; actionTicks: number };
 const layout = buildLayout();
 const metrics: Metrics = { ordersDispatched: 0, ordersRejected: 0, throughputPerHour: 0, latencyAvgMs: 0, latencyP95Ms: 0, robotUtilization: 0, backlog: 0, robotsActive: 0, maxWaitTicks: 0 };
 const config: SimConfig = { robots: 12, orderRate: 0.5, running: false };
@@ -11,7 +12,7 @@ let robots: Robot[] = [];
 let ticks = 0;
 const events: SimEvent[] = [];
 
-export function resetSim() { robots = Array.from({ length: config.robots }, (_, id) => ({ id: id + 1, x: id, y: 19, state: 'IDLE' as RobotState, taskId: null, path: [], goal: null, waitTicks: 0 })); metrics.robotsActive = robots.length; }
+export function resetSim() { robots = Array.from({ length: config.robots }, (_, id) => ({ id: id + 1, x: id, y: 19, state: 'IDLE' as RobotState, taskId: null, path: [], goal: null, waitTicks: 0, actionTicks: 0 })); metrics.robotsActive = robots.length; }
 resetSim();
 export function snapshot() { return { layout, config, robots: views(), metrics, events: events.slice(-12) }; }
 export function views() { return robots.map(({ id, x, y, state, taskId, path }) => ({ id, x, y, state, taskId, path })); }
@@ -29,8 +30,19 @@ export async function tick() {
     robot.path = assignment.path.map((point) => [point.x, point.y]);
   }
   for (const robot of robots) {
+    if (robot.state === 'PICKING' || robot.state === 'DROPPING') {
+      robot.actionTicks--;
+      if (robot.actionTicks > 0) continue;
+      if (robot.state === 'PICKING') { robot.state = 'TO_STATION'; robot.goal = layout.stations[robot.id % layout.stations.length]; assignPath(robot); }
+      else { if (robot.taskId) await completeTask(robot.taskId); robot.state = 'RETURNING'; robot.taskId = null; robot.goal = { x: robot.id - 1, y: 19 }; assignPath(robot); }
+      continue;
+    }
     if (robot.path.length) { const next = robot.path.shift()!; robot.x = next[0]; robot.y = next[1]; }
-    if (!robot.path.length && robot.goal) { if (robot.state === 'TO_SHELF') { robot.state = 'RETURNING'; robot.goal = { x: robot.id - 1, y: 19 }; assignPath(robot); } else { robot.state = 'IDLE'; robot.goal = null; robot.taskId = null; } }
+    if (!robot.path.length && robot.goal) {
+      if (robot.state === 'TO_SHELF') { robot.state = 'PICKING'; robot.actionTicks = PICK_TICKS; }
+      else if (robot.state === 'TO_STATION') { robot.state = 'DROPPING'; robot.actionTicks = DROP_TICKS; }
+      else { robot.state = 'IDLE'; robot.goal = null; robot.taskId = null; }
+    }
   }
   metrics.robotsActive = robots.length;
   metrics.robotUtilization = robots.filter((r) => r.state !== 'IDLE' && r.state !== 'FAILED').length / Math.max(1, robots.length);
