@@ -29,5 +29,5 @@ app.post('/api/orders', async (request, reply) => {
   catch (error) { const cause = error as { code?: string; sku?: string }; return reply.code(409).send({ error: { code: cause.code ?? 'ORDER_FAILED', message: 'Stock could not be reserved.', sku: cause.sku } }); }
 });
 app.post('/api/sim/config', async (request) => simConfig(request.body as Partial<{ robots: number; orderRate: number; running: boolean }>));
-setInterval(() => { tick(); const data = JSON.stringify({ type: 'tick', t: Date.now(), robots: views() }); clients.forEach((client) => { if (client.readyState === 1) client.send(data); }); }, TICK_MS);
+setInterval(async () => { await tick(); const data = JSON.stringify({ type: 'tick', t: Date.now(), robots: views() }); clients.forEach((client) => { if (client.readyState === 1) client.send(data); }); }, TICK_MS);
 await app.listen({ port: Number(process.env.PORT ?? 3001), host: '0.0.0.0' });
