@@ -1,6 +1,7 @@
 import { buildLayout, findPath, type Point, type RobotState, type RobotView, type SimConfig, type Metrics, type SimEvent } from '@warehouse/shared';
 import { TICK_MS } from './constants.js';
 import { schedule } from './scheduler.js';
+import { generateOrder, replenishStock } from './generator.js';
 
 type Robot = RobotView & { goal: Point | null; waitTicks: number };
 const layout = buildLayout();
@@ -19,6 +20,8 @@ export function simConfig(input?: Partial<SimConfig>) { if (input) { Object.assi
 export async function tick() {
   ticks++;
   if (!config.running) return;
+  if (ticks % 5 === 0) for (let index = 0; index < Math.floor(config.orderRate) + (Math.random() < config.orderRate % 1 ? 1 : 0); index++) await generateOrder(config.orderRate);
+  if (ticks % 150 === 0) await replenishStock();
   const assignments = await schedule(robots.filter((robot) => robot.state === 'IDLE').map((robot) => ({ id: robot.id, position: robot })));
   for (const assignment of assignments) {
     const robot = robots.find((item) => item.id === assignment.robotId)!;
