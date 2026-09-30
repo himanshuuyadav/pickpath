@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { FAILED_VISIBLE_TICKS, RESPAWN_TICKS } from './constants.js';
 
 describe('failure recovery', () => {
-  it('uses a short visible failure period before removal', () => expect(10).toBeGreaterThan(0));
-  it('uses a longer replacement delay', () => expect(50).toBeGreaterThan(10));
+  it('uses a short visible failure period before removal', () => expect(FAILED_VISIBLE_TICKS).toBe(10));
+  it('uses a longer replacement delay', () => expect(RESPAWN_TICKS).toBeGreaterThan(FAILED_VISIBLE_TICKS));
   it('does not reuse the failed robot identifier', () => {
     const survivors = [{ id: 1 }, { id: 3 }];
     const replacement = Math.max(...survivors.map((robot) => robot.id)) + 1;

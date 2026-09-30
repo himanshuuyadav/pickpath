@@ -2,7 +2,7 @@ import { buildLayout, findPath, type Point } from '@warehouse/shared';
 import { database } from './db.js';
 
 export type AvailableRobot = { id: number; position: Point };
-export type Assignment = { taskId: number; robotId: number; shelf: Point; path: Point[] };
+export type Assignment = { taskId: number; robotId: number; shelf: Point; access: Point; path: Point[] };
 
 const layout = buildLayout();
 
@@ -22,7 +22,7 @@ export async function schedule(robots: AvailableRobot[]): Promise<Assignment[]> 
     const claimed = await database.query("update tasks set status = 'ASSIGNED', robot_id = $1 where id = $2 and status = 'PENDING' returning id", [choice.robot.id, task.id]);
     if (!claimed.rowCount) continue;
     await database.query("update orders set status = 'PICKING' where id = (select order_id from tasks where id = $1) and status = 'RESERVED'", [task.id]);
-    assignments.push({ taskId: task.id, robotId: choice.robot.id, shelf: choice.shelf, path: choice.path });
+    assignments.push({ taskId: task.id, robotId: choice.robot.id, shelf: choice.shelf, access: { x: choice.shelf.x % 3 === 2 ? choice.shelf.x - 1 : choice.shelf.x + 1, y: choice.shelf.y }, path: choice.path });
     available.splice(available.indexOf(choice.robot), 1);
   }
   return assignments;

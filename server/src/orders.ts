@@ -18,7 +18,10 @@ export async function reserveOrder(input: OrderInput, idempotencyKey: string) {
     const orderId = created.rows[0].id;
     for (const item of items) {
       const stock = await client.query('update stock set reserved = reserved + $1 where sku = $2 and on_hand - reserved >= $1 returning sku', [item.qty, item.sku]);
-      if (!stock.rowCount) throw Object.assign(new Error('Insufficient stock'), { code: 'INSUFFICIENT_STOCK', sku: item.sku });
+      if (!stock.rowCount) {
+        const known = await client.query('select 1 from stock where sku = $1', [item.sku]);
+        throw Object.assign(new Error(known.rowCount ? 'Insufficient stock' : 'Unknown SKU'), { code: known.rowCount ? 'INSUFFICIENT_STOCK' : 'UNKNOWN_SKU', sku: item.sku });
+      }
       await client.query('insert into tasks (order_id,sku,qty,priority,status) values ($1,$2,$3,$4,$5)', [orderId, item.sku, item.qty, input.priority ?? 0, 'PENDING']);
     }
     return { replay: false, order: { id: orderId, status: 'RESERVED' } };

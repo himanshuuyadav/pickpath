@@ -27,7 +27,11 @@ app.post('/api/orders', async (request, reply) => {
   if (!key || typeof key !== 'string') return reply.code(400).send({ error: { code: 'MISSING_IDEMPOTENCY_KEY', message: 'Provide an Idempotency-Key header.' } });
   if (!validateOrder(body)) return reply.code(400).send({ error: { code: 'VALIDATION_ERROR', message: 'Use 1–10 items with quantities from 1 to 10.' } });
   try { const result = await reserveOrder(body, key); return reply.code(result.replay ? 200 : 201).send(result.order); }
-  catch (error) { const cause = error as { code?: string; sku?: string }; return reply.code(409).send({ error: { code: cause.code ?? 'ORDER_FAILED', message: 'Stock could not be reserved.', sku: cause.sku } }); }
+  catch (error) {
+    const cause = error as { code?: string; sku?: string };
+    const status = cause.code === 'UNKNOWN_SKU' ? 404 : 409;
+    return reply.code(status).send({ error: { code: cause.code ?? 'ORDER_FAILED', message: cause.code === 'UNKNOWN_SKU' ? 'The requested SKU does not exist.' : 'Stock could not be reserved.', sku: cause.sku } });
+  }
 });
 app.post('/api/sim/config', async (request) => simConfig(request.body as Partial<{ robots: number; orderRate: number; running: boolean }>));
 app.post('/api/sim/reset', async () => { await resetWarehouse(); simConfig({ running: false }); resetSim(); return snapshot(); });
