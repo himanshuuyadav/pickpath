@@ -1,11 +1,12 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
-import { killRobot, resetSim, simConfig, simMetrics, snapshot, tick, views, TICK_MS } from './sim.js';
+import { eventsAfter, killRobot, resetSim, simConfig, simMetrics, snapshot, tick, views, TICK_MS } from './sim.js';
 import { migrate } from './migrate.js';
 import { reserveOrder, validateOrder, type OrderInput } from './orders.js';
 import { recoverTasks } from './tasks.js';
 import { resetWarehouse } from './reset.js';
+import { stockRace } from './demo.js';
 
 const app = Fastify({ logger: true });
 await migrate();
@@ -34,10 +35,28 @@ app.post('/api/orders', async (request, reply) => {
   }
 });
 app.post('/api/sim/config', async (request) => simConfig(request.body as Partial<{ robots: number; orderRate: number; running: boolean }>));
-app.post('/api/sim/reset', async () => { await resetWarehouse(); simConfig({ running: false }); resetSim(); return snapshot(); });
+app.post('/api/sim/reset', async () => { await resetWarehouse(); simConfig({ running: false }); resetSim(); eventCursor = 0; return snapshot(); });
 app.post('/api/sim/robots/:id/kill', async (request, reply) => {
   const killed = await killRobot(Number((request.params as { id: string }).id));
   return killed ? { ok: true } : reply.code(404).send({ error: { code: 'ROBOT_NOT_FOUND', message: 'No live robot has that id.' } });
 });
-setInterval(async () => { await tick(); const data = JSON.stringify({ type: 'tick', t: Date.now(), robots: views() }); clients.forEach((client) => { if (client.readyState === 1) client.send(data); }); }, TICK_MS);
+app.post('/api/demo/stock-race', async (request, reply) => {
+  const requests = Number((request.body as { requests?: number } | undefined)?.requests ?? 1000);
+  if (!Number.isInteger(requests) || requests < 1 || requests > 1000) return reply.code(400).send({ error: { code: 'VALIDATION_ERROR', message: 'Requests must be an integer from 1 to 1000.' } });
+  try { return await stockRace(requests); }
+  catch (error) { const cause = error as { code?: string }; return reply.code(cause.code === 'RACE_IN_PROGRESS' ? 409 : 500).send({ error: { code: cause.code ?? 'RACE_FAILED', message: 'The stock race could not run.' } }); }
+});
+let metricTicks = 0;
+let eventCursor = 0;
+setInterval(async () => {
+  await tick();
+  const tickMessage = JSON.stringify({ type: 'tick', t: Date.now(), robots: views() });
+  clients.forEach((client) => { if (client.readyState === 1) client.send(tickMessage); });
+  const batch = eventsAfter(eventCursor); eventCursor = batch.cursor;
+  batch.events.forEach((event) => { const eventMessage = JSON.stringify({ type: 'event', event }); clients.forEach((client) => { if (client.readyState === 1) client.send(eventMessage); }); });
+  if (++metricTicks % 5 === 0) {
+    const metricMessage = JSON.stringify({ type: 'metrics', metrics: simMetrics() });
+    clients.forEach((client) => { if (client.readyState === 1) client.send(metricMessage); });
+  }
+}, TICK_MS);
 await app.listen({ port: Number(process.env.PORT ?? 3001), host: '0.0.0.0' });

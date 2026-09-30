@@ -2,6 +2,11 @@ import { withTransaction } from './db.js';
 
 export type OrderInput = { items: { sku: string; qty: number }[]; priority?: number };
 
+export function normalizeItems(items: OrderInput['items']) {
+  return [...items.reduce((merged, item) => merged.set(item.sku, (merged.get(item.sku) ?? 0) + item.qty), new Map<string, number>())]
+    .map(([sku, qty]) => ({ sku, qty })).sort((a, b) => a.sku.localeCompare(b.sku));
+}
+
 export function validateOrder(input: unknown): input is OrderInput {
   const value = input as OrderInput;
   return Array.isArray(value?.items) && value.items.length >= 1 && value.items.length <= 10
@@ -10,8 +15,7 @@ export function validateOrder(input: unknown): input is OrderInput {
 }
 
 export async function reserveOrder(input: OrderInput, idempotencyKey: string) {
-  const items = [...input.items.reduce((merged, item) => merged.set(item.sku, (merged.get(item.sku) ?? 0) + item.qty), new Map<string, number>())]
-    .map(([sku, qty]) => ({ sku, qty })).sort((a, b) => a.sku.localeCompare(b.sku));
+  const items = normalizeItems(input.items);
   return withTransaction(async (client) => {
     const created = await client.query<{ id: number }>('insert into orders (idempotency_key,status,priority) values ($1, $2, $3) on conflict (idempotency_key) do nothing returning id', [idempotencyKey, 'RESERVED', input.priority ?? 0]);
     if (!created.rowCount) { const existing = await client.query('select id,status from orders where idempotency_key = $1', [idempotencyKey]); return { replay: true, order: existing.rows[0] }; }

@@ -12,5 +12,5 @@ export async function generateOrder() {
 }
 
 export async function replenishStock() {
-  await database.query("update stock set on_hand = 50 where sku <> 'RACE-001' and on_hand - reserved < 10");
+  await database.query("update stock set on_hand = greatest(50, reserved) where sku <> 'RACE-001' and on_hand - reserved < 10");
 }

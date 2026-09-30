@@ -15,9 +15,17 @@ let nextRobotId = 1;
 const events: SimEvent[] = [];
 const respawns: number[] = [];
 
-export function resetSim() { robots = Array.from({ length: config.robots }, (_, id) => ({ id: id + 1, x: id, y: 19, state: 'IDLE' as RobotState, taskId: null, path: [], goal: null, waitTicks: 0, actionTicks: 0, failedAt: null })); nextRobotId = config.robots + 1; respawns.length = 0; metrics.robotsActive = robots.length; }
+export function resetSim() {
+  robots = Array.from({ length: config.robots }, (_, id) => ({ id: id + 1, x: id, y: 19, state: 'IDLE' as RobotState, taskId: null, path: [], goal: null, waitTicks: 0, actionTicks: 0, failedAt: null }));
+  ticks = 0;
+  nextRobotId = config.robots + 1;
+  respawns.length = 0;
+  events.length = 0;
+  Object.assign(metrics, { ordersDispatched: 0, ordersRejected: 0, throughputPerHour: 0, latencyAvgMs: 0, latencyP95Ms: 0, robotUtilization: 0, backlog: 0, robotsActive: robots.length, maxWaitTicks: 0 });
+}
 resetSim();
 export function snapshot() { return { layout, config, robots: views(), metrics, events: events.slice(-12) }; }
+export function eventsAfter(cursor: number) { return { events: events.slice(cursor), cursor: events.length }; }
 export function views() { return robots.map(({ id, x, y, state, taskId, path }) => ({ id, x, y, state, taskId, path })); }
 export function simMetrics() { return metrics; }
 export function simConfig(input?: Partial<SimConfig>) { if (input) { Object.assign(config, input); if (input.robots !== undefined) resetSim(); } return config; }
