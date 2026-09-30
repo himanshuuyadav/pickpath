@@ -3,3 +3,4 @@ export const GRID_HEIGHT = 20;
 export * from './layout.js';
 export * from './astar.js';
 export * from './messages.js';
+export * from './collision.js';

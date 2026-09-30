@@ -1,4 +1,4 @@
-import { buildLayout, findPath, type Point, type RobotState, type RobotView, type SimConfig, type Metrics, type SimEvent } from '@warehouse/shared';
+import { arbitrate, buildLayout, findPath, type Point, type RobotState, type RobotView, type SimConfig, type Metrics, type SimEvent } from '@warehouse/shared';
 import { DROP_TICKS, PICK_TICKS, TICK_MS } from './constants.js';
 import { schedule } from './scheduler.js';
 import { generateOrder, replenishStock } from './generator.js';
@@ -29,6 +29,8 @@ export async function tick() {
     robot.state = 'TO_SHELF'; robot.taskId = assignment.taskId; robot.goal = assignment.shelf;
     robot.path = assignment.path.map((point) => [point.x, point.y]);
   }
+  const motion = arbitrate(robots.map((robot) => ({ id: robot.id, current: robot, next: robot.path[0] ? { x: robot.path[0][0], y: robot.path[0][1] } : null })), ticks);
+  const canMove = new Set(motion.allowed);
   for (const robot of robots) {
     if (robot.state === 'PICKING' || robot.state === 'DROPPING') {
       robot.actionTicks--;
@@ -37,7 +39,8 @@ export async function tick() {
       else { if (robot.taskId) await completeTask(robot.taskId); robot.state = 'RETURNING'; robot.taskId = null; robot.goal = { x: robot.id - 1, y: 19 }; assignPath(robot); }
       continue;
     }
-    if (robot.path.length) { const next = robot.path.shift()!; robot.x = next[0]; robot.y = next[1]; }
+    if (robot.path.length && canMove.has(robot.id)) { const next = robot.path.shift()!; robot.x = next[0]; robot.y = next[1]; robot.waitTicks = 0; }
+    else if (robot.path.length) { robot.waitTicks++; }
     if (!robot.path.length && robot.goal) {
       if (robot.state === 'TO_SHELF') { robot.state = 'PICKING'; robot.actionTicks = PICK_TICKS; }
       else if (robot.state === 'TO_STATION') { robot.state = 'DROPPING'; robot.actionTicks = DROP_TICKS; }
@@ -46,6 +49,7 @@ export async function tick() {
   }
   metrics.robotsActive = robots.length;
   metrics.robotUtilization = robots.filter((r) => r.state !== 'IDLE' && r.state !== 'FAILED').length / Math.max(1, robots.length);
+  metrics.maxWaitTicks = Math.max(0, ...robots.map((robot) => robot.waitTicks));
 }
 function assignPath(robot: Robot) { robot.path = (findPath(layout, robot, robot.goal!) ?? []).map((p) => [p.x, p.y]); }
 export { TICK_MS };
