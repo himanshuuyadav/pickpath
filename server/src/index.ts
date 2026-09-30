@@ -4,9 +4,11 @@ import websocket from '@fastify/websocket';
 import { simConfig, simMetrics, snapshot, tick, views, TICK_MS } from './sim.js';
 import { migrate } from './migrate.js';
 import { reserveOrder, validateOrder, type OrderInput } from './orders.js';
+import { recoverTasks } from './tasks.js';
 
 const app = Fastify({ logger: true });
 await migrate();
+await recoverTasks();
 await app.register(cors, { origin: process.env.CORS_ORIGIN ?? true });
 await app.register(websocket);
 app.get('/health', async () => ({ ok: true }));
