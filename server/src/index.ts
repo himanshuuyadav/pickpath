@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
-import { resetSim, simConfig, simMetrics, snapshot, tick, views, TICK_MS } from './sim.js';
+import { killRobot, resetSim, simConfig, simMetrics, snapshot, tick, views, TICK_MS } from './sim.js';
 import { migrate } from './migrate.js';
 import { reserveOrder, validateOrder, type OrderInput } from './orders.js';
 import { recoverTasks } from './tasks.js';
@@ -31,5 +31,9 @@ app.post('/api/orders', async (request, reply) => {
 });
 app.post('/api/sim/config', async (request) => simConfig(request.body as Partial<{ robots: number; orderRate: number; running: boolean }>));
 app.post('/api/sim/reset', async () => { await resetWarehouse(); simConfig({ running: false }); resetSim(); return snapshot(); });
+app.post('/api/sim/robots/:id/kill', async (request, reply) => {
+  const killed = await killRobot(Number((request.params as { id: string }).id));
+  return killed ? { ok: true } : reply.code(404).send({ error: { code: 'ROBOT_NOT_FOUND', message: 'No live robot has that id.' } });
+});
 setInterval(async () => { await tick(); const data = JSON.stringify({ type: 'tick', t: Date.now(), robots: views() }); clients.forEach((client) => { if (client.readyState === 1) client.send(data); }); }, TICK_MS);
 await app.listen({ port: Number(process.env.PORT ?? 3001), host: '0.0.0.0' });
