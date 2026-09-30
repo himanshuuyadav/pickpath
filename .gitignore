@@ -1,3 +1,38 @@
+# Dependencies and package manager files
+node_modules/
+.pnp.*
+
+# Build output and test artifacts
+dist/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Runtime logs and operating-system files
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Local tooling, agent, and editor state
+.agents/
+.codex/
+.claude/
+.cursor/
+.vscode/
+.idea/
+
+# Project working notes; source documentation is added intentionally later
 plan.md
 progress.md
 project.md
