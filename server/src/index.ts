@@ -2,8 +2,10 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
 import { simConfig, simMetrics, snapshot, tick, views, TICK_MS } from './sim.js';
+import { migrate } from './migrate.js';
 
 const app = Fastify({ logger: true });
+await migrate();
 await app.register(cors, { origin: process.env.CORS_ORIGIN ?? true });
 await app.register(websocket);
 app.get('/health', async () => ({ ok: true }));
