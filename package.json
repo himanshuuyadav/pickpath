@@ -1,0 +1,7 @@
+{
+  "name": "warehouse-fulfillment-simulator",
+  "private": true,
+  "workspaces": ["web", "server", "shared"],
+  "scripts": { "dev": "concurrently -n db,server,web -c yellow,cyan,magenta \"docker compose up db\" \"npm run dev -w server\" \"npm run dev -w web\"", "build": "npm run build -w shared && npm run build -w server && npm run build -w web", "test": "npm run test -w shared && npm run test -w server", "typecheck": "npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w web" },
+  "devDependencies": { "concurrently": "^9.1.2", "typescript": "^5.7.3" }
+}
