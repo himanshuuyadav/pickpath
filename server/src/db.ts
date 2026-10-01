@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 
-export const database = new Pool({ connectionString: process.env.DATABASE_URL ?? 'postgres://warehouse:warehouse@localhost:5432/warehouse', max: 10 });
+export const database = new Pool({ connectionString: process.env.DATABASE_URL ?? 'postgres://warehouse:warehouse@127.0.0.1:55432/warehouse', max: 10 });
 
 export async function withTransaction<T>(work: (client: import('pg').PoolClient) => Promise<T>) {
   const client = await database.connect();

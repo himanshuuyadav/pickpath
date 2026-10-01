@@ -1,11 +1,11 @@
 import { arbitrate, buildLayout, findPath, type Point, type RobotState, type RobotView, type SimConfig, type Metrics, type SimEvent } from '@warehouse/shared';
-import { DROP_TICKS, FAILED_VISIBLE_TICKS, PACK_TICKS, PICK_TICKS, RESPAWN_TICKS, TICK_MS, WAIT_REPLAN } from './constants.js';
+import { DROP_TICKS, FAILED_VISIBLE_TICKS, MAX_WAIT_TICKS, PACK_TICKS, PICK_TICKS, RESPAWN_TICKS, TICK_MS, WAIT_REPLAN } from './constants.js';
 import { schedule } from './scheduler.js';
 import { generateOrder, replenishStock } from './generator.js';
 import { completeTask, dispatchReadyOrders, markTaskPicked, pendingTaskCount } from './tasks.js';
 import { requeueRobotTask } from './failures.js';
 
-type Robot = RobotView & { goal: Point | null; waitTicks: number; actionTicks: number; failedAt: number | null };
+type Robot = RobotView & { goal: Point | null; station: Point | null; waitTicks: number; actionTicks: number; failedAt: number | null };
 const layout = buildLayout();
 const metrics: Metrics = { ordersDispatched: 0, ordersRejected: 0, throughputPerHour: 0, latencyAvgMs: 0, latencyP95Ms: 0, robotUtilization: 0, backlog: 0, robotsActive: 0, maxWaitTicks: 0 };
 const config: SimConfig = { robots: 12, orderRate: 0.5, running: false };
@@ -16,7 +16,7 @@ const events: SimEvent[] = [];
 const respawns: number[] = [];
 
 export function resetSim() {
-  robots = Array.from({ length: config.robots }, (_, id) => ({ id: id + 1, x: id, y: 19, state: 'IDLE' as RobotState, taskId: null, path: [], goal: null, waitTicks: 0, actionTicks: 0, failedAt: null }));
+  robots = Array.from({ length: config.robots }, (_, id) => ({ id: id + 1, x: id, y: 19, state: 'IDLE' as RobotState, taskId: null, path: [], goal: null, station: null, waitTicks: 0, actionTicks: 0, failedAt: null }));
   ticks = 0;
   nextRobotId = config.robots + 1;
   respawns.length = 0;
@@ -67,8 +67,8 @@ export async function tick() {
     if (robot.state === 'PICKING' || robot.state === 'DROPPING') {
       robot.actionTicks--;
       if (robot.actionTicks > 0) continue;
-      if (robot.state === 'PICKING') { robot.state = 'TO_STATION'; robot.goal = availableStation(robot); assignPath(robot); }
-      else { if (robot.taskId) await completeTask(robot.taskId); robot.state = 'RETURNING'; robot.taskId = null; robot.goal = { x: robot.id - 1, y: 19 }; assignPath(robot); }
+      if (robot.state === 'PICKING') { robot.state = 'TO_STATION'; robot.station = availableStation(robot); robot.goal = robot.station ?? { x: 3, y: 9 }; assignPath(robot); }
+      else { if (robot.taskId) await completeTask(robot.taskId); robot.state = 'RETURNING'; robot.taskId = null; robot.station = null; robot.goal = { x: robot.id - 1, y: 19 }; assignPath(robot); }
       continue;
     }
     if (robot.path.length && canMove.has(robot.id)) { const next = robot.path.shift()!; robot.x = next[0]; robot.y = next[1]; robot.waitTicks = 0; }
@@ -79,10 +79,11 @@ export async function tick() {
     if (!robot.path.length && robot.goal) {
       if (robot.state === 'TO_SHELF') { await markTaskPicked(robot.taskId!); robot.state = 'PICKING'; robot.actionTicks = PICK_TICKS; }
       else if (robot.state === 'TO_STATION') {
-        const station = availableStation(robot);
-        if (station.x === 3 && station.y === 9) { continue; }
-        if (robot.goal?.x === 3 && robot.goal.y === 9) { robot.goal = station; assignPath(robot); continue; }
-        robot.goal = station;
+        if (robot.goal?.x === 3 && robot.goal.y === 9) {
+          const station = availableStation(robot);
+          if (station) { robot.station = station; robot.goal = station; assignPath(robot); }
+          continue;
+        }
         robot.state = 'DROPPING'; robot.actionTicks = DROP_TICKS;
       }
       else { robot.state = 'IDLE'; robot.goal = null; robot.taskId = null; }
@@ -105,19 +106,20 @@ function spawnReplacements() {
     const parking = layout.parking.find((spot) => !occupied.has(spot.x));
     if (!parking) continue;
     const id = nextRobotId++;
-    robots.push({ id, x: parking.x, y: parking.y, state: 'IDLE', taskId: null, path: [], goal: null, waitTicks: 0, actionTicks: 0, failedAt: null });
+    robots.push({ id, x: parking.x, y: parking.y, state: 'IDLE', taskId: null, path: [], goal: null, station: null, waitTicks: 0, actionTicks: 0, failedAt: null });
     events.push({ ts: Date.now(), kind: 'ROBOT_RESPAWNED', text: `Robot ${id} joined the fleet`, robotId: id });
   }
 }
 function assignPath(robot: Robot) { robot.path = (findPath(layout, robot, robot.goal!) ?? []).map((p) => [p.x, p.y]); }
 function replanAroundRobots(robot: Robot) {
+  if (robot.waitTicks >= MAX_WAIT_TICKS && robot.state === 'TO_STATION' && !(robot.goal?.x === 3 && robot.goal.y === 9)) { robot.station = null; robot.goal = { x: 3, y: 9 }; }
   const blocked = new Set(robots.filter((other) => other.id !== robot.id).map((other) => `${other.x},${other.y}`));
   blocked.delete(`${robot.goal!.x},${robot.goal!.y}`);
   const path = findPath(layout, robot, robot.goal!, blocked);
   if (path) { robot.path = path.map((point) => [point.x, point.y]); robot.waitTicks = 0; }
 }
-function availableStation(robot: Robot) {
-  const claimed = new Set(robots.filter((other) => other.id !== robot.id && (other.state === 'TO_STATION' || other.state === 'DROPPING')).map((other) => `${other.goal?.x},${other.goal?.y}`));
-  return layout.stations.find((station) => !claimed.has(`${station.x},${station.y}`)) ?? { x: 3, y: 9 };
+function availableStation(robot: Robot): Point | null {
+  const claimed = new Set(robots.filter((other) => other.id !== robot.id && other.station).map((other) => `${other.station!.x},${other.station!.y}`));
+  return layout.stations.find((station) => !claimed.has(`${station.x},${station.y}`)) ?? null;
 }
 export { TICK_MS };

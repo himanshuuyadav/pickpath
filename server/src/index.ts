@@ -7,6 +7,7 @@ import { reserveOrder, validateOrder, type OrderInput } from './orders.js';
 import { recoverTasks } from './tasks.js';
 import { resetWarehouse } from './reset.js';
 import { stockRace } from './demo.js';
+import { database } from './db.js';
 
 const app = Fastify({ logger: true });
 await migrate();
@@ -46,17 +47,33 @@ app.post('/api/demo/stock-race', async (request, reply) => {
   try { return await stockRace(requests); }
   catch (error) { const cause = error as { code?: string }; return reply.code(cause.code === 'RACE_IN_PROGRESS' ? 409 : 500).send({ error: { code: cause.code ?? 'RACE_FAILED', message: 'The stock race could not run.' } }); }
 });
+app.post('/api/dev/set-stock', async (request, reply) => {
+  if (process.env.ENABLE_DEV_ROUTES !== 'true') return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Development routes are disabled.' } });
+  const body = request.body as { sku?: string; onHand?: number };
+  const onHand = body?.onHand;
+  if (!body?.sku || typeof onHand !== 'number' || !Number.isInteger(onHand) || onHand < 0) return reply.code(400).send({ error: { code: 'VALIDATION_ERROR', message: 'Provide a SKU and non-negative integer onHand.' } });
+  const result = await database.query('update stock set on_hand = greatest($1, reserved) where sku = $2 returning sku,on_hand,reserved', [onHand, body.sku]);
+  if (!result.rowCount) return reply.code(404).send({ error: { code: 'UNKNOWN_SKU', message: 'The requested SKU does not exist.' } });
+  return result.rows[0];
+});
 let metricTicks = 0;
 let eventCursor = 0;
+let tickRunning = false;
 setInterval(async () => {
-  await tick();
-  const tickMessage = JSON.stringify({ type: 'tick', t: Date.now(), robots: views() });
-  clients.forEach((client) => { if (client.readyState === 1) client.send(tickMessage); });
-  const batch = eventsAfter(eventCursor); eventCursor = batch.cursor;
-  batch.events.forEach((event) => { const eventMessage = JSON.stringify({ type: 'event', event }); clients.forEach((client) => { if (client.readyState === 1) client.send(eventMessage); }); });
-  if (++metricTicks % 5 === 0) {
-    const metricMessage = JSON.stringify({ type: 'metrics', metrics: simMetrics() });
-    clients.forEach((client) => { if (client.readyState === 1) client.send(metricMessage); });
+  if (tickRunning) return;
+  tickRunning = true;
+  try {
+    await tick();
+    const tickMessage = JSON.stringify({ type: 'tick', t: Date.now(), robots: views() });
+    clients.forEach((client) => { if (client.readyState === 1) client.send(tickMessage); });
+    const batch = eventsAfter(eventCursor); eventCursor = batch.cursor;
+    batch.events.forEach((event) => { const eventMessage = JSON.stringify({ type: 'event', event }); clients.forEach((client) => { if (client.readyState === 1) client.send(eventMessage); }); });
+    if (++metricTicks % 5 === 0) {
+      const metricMessage = JSON.stringify({ type: 'metrics', metrics: simMetrics() });
+      clients.forEach((client) => { if (client.readyState === 1) client.send(metricMessage); });
+    }
+  } finally {
+    tickRunning = false;
   }
 }, TICK_MS);
 await app.listen({ port: Number(process.env.PORT ?? 3001), host: '0.0.0.0' });

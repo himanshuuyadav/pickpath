@@ -51,7 +51,7 @@ function App() {
     const response = await fetch(`${api}/api/sim/config`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
     if (response.ok) setConfig(await response.json() as SimConfig);
   }
-  async function reset() { await fetch(`${api}/api/sim/reset`, { method: 'POST' }); setRace(null); }
+  async function reset() { await fetch(`${api}/api/sim/reset`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); setRace(null); }
   async function failRobot() { const busy = robots.find((robot) => robot.state !== 'IDLE' && robot.state !== 'FAILED'); if (busy) await fetch(`${api}/api/sim/robots/${busy.id}/kill`, { method: 'POST' }); }
   async function runRace() { const response = await fetch(`${api}/api/demo/stock-race`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requests: 1000 }) }); if (response.ok) setRace(await response.json()); }
   const selected = robots.find((robot) => robot.id === selectedId);

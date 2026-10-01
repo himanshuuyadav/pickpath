@@ -5,9 +5,20 @@ services:
       POSTGRES_DB: warehouse
       POSTGRES_USER: warehouse
       POSTGRES_PASSWORD: warehouse
-    ports: ["5432:5432"]
+    ports: ["55432:5432"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U warehouse -d warehouse"]
       interval: 5s
       timeout: 5s
       retries: 10
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgres://warehouse:warehouse@db:5432/warehouse
+      PORT: 3001
+    depends_on:
+      db:
+        condition: service_healthy
+    ports: ["3001:3001"]
